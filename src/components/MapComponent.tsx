@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
+import { Station } from '@/types';
 
 const MapContainer = dynamic(
     () => import('react-leaflet').then((mod) => mod.MapContainer),
@@ -19,28 +20,27 @@ const Popup = dynamic(
     () => import('react-leaflet').then((mod) => mod.Popup),
     { ssr: false }
 );
+const Polyline = dynamic(
+    () => import('react-leaflet').then((mod) => mod.Polyline),
+    { ssr: false }
+);
 
 // Leaflet CSS is handled globally or via dynamic import if needed, but imports here might cause issues if they access window.
 // import 'leaflet/dist/leaflet.css'; // Sometimes this is safe, but let's check. 
 // Ideally import css in globals or layout if possible, or keep it if it doesn't throw.
 import 'leaflet/dist/leaflet.css';
 
-// Remove top-level L import
-// import L from 'leaflet'; 
-
-// Remove top-level DefaultIcon definition
-
-// We need to apply this fix only on client side
 interface MapComponentProps {
     center: [number, number];
-    markers: any[]; // Changed to any[] temporarily to fix circular dependency or can import Station
-    onMarkerClick?: (marker: any) => void;
+    markers: Station[];
+    onMarkerClick?: (marker: Station) => void;
+    userLocation?: { lat: number, lng: number };
+    route?: [number, number][];
 }
 
-import { Station } from '@/types';
-
-const MapComponent = ({ center, markers, onMarkerClick }: { center: [number, number], markers: Station[], onMarkerClick?: (marker: Station) => void }) => {
+const MapComponent = ({ center, markers, onMarkerClick, userLocation, route }: MapComponentProps) => {
     const [isMounted, setIsMounted] = useState(false);
+    const mapRef = useRef<any>(null);
 
     useEffect(() => {
         setIsMounted(true);
@@ -58,16 +58,33 @@ const MapComponent = ({ center, markers, onMarkerClick }: { center: [number, num
         })();
     }, []);
 
+    // Auto-center on user location if available
+    useEffect(() => {
+        if (mapRef.current && userLocation) {
+            mapRef.current.flyTo([userLocation.lat, userLocation.lng], 15, { animate: true });
+        }
+    }, [userLocation]);
+
     if (!isMounted) {
         return <div className="h-full w-full bg-slate-800 animate-pulse rounded-xl" />;
     }
 
+    // Custom icon for user
+    const userIcon = typeof window !== 'undefined' ? new (require('leaflet').Icon)({
+        iconUrl: 'https://cdn-icons-png.flaticon.com/512/3253/3253166.png', // Placeholder car/user icon
+        iconSize: [40, 40],
+        iconAnchor: [20, 20],
+        popupAnchor: [0, -20],
+        className: 'user-marker-icon'
+    }) : null;
+
     return (
         <MapContainer
-            center={center as any} // react-leaflet types can be finicky
+            center={center as any}
             zoom={13}
             style={{ height: '100%', width: '100%', borderRadius: '1rem', zIndex: 0 }}
             zoomControl={false}
+            ref={mapRef}
         >
             <TileLayer
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -90,6 +107,25 @@ const MapComponent = ({ center, markers, onMarkerClick }: { center: [number, num
                     </Popup>
                 </Marker>
             ))}
+
+            {userLocation && userIcon && (
+                <Marker
+                    position={[userLocation.lat, userLocation.lng]}
+                    icon={userIcon}
+                    zIndexOffset={100}
+                >
+                    <Popup className="glass-popup">
+                        <div className="text-slate-900 font-bold">You are here</div>
+                    </Popup>
+                </Marker>
+            )}
+
+            {route && route.length > 0 && (
+                <Polyline
+                    positions={route}
+                    pathOptions={{ color: '#3b82f6', weight: 6, opacity: 0.8, lineCap: 'round', lineJoin: 'round' }}
+                />
+            )}
         </MapContainer>
     );
 };

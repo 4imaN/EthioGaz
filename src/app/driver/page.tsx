@@ -16,6 +16,11 @@ export default function DriverPage() {
     const [stations, setStations] = useState<Station[]>([]);
     const [activeQueue, setActiveQueue] = useState<QueueItem | null>(null);
 
+    // Navigation State
+    const [isNavigating, setIsNavigating] = useState(false);
+    const [navigationRoute, setNavigationRoute] = useState<[number, number][]>([]);
+    const [targetStation, setTargetStation] = useState<Station | null>(null);
+
     useEffect(() => {
         // Simulate fetching and sorting stations
         const sortedStations = MOCK_STATIONS.map(station => {
@@ -24,7 +29,7 @@ export default function DriverPage() {
         }).sort((a, b) => (a.distance || 0) - (b.distance || 0));
 
         setStations(sortedStations);
-    }, [userLocation]);
+    }, [userLocation]); // Re-sort when user moves
 
     const handleJoinQueue = (stationId: string) => {
         setActiveQueue({
@@ -40,6 +45,51 @@ export default function DriverPage() {
 
     const handleLeaveQueue = () => {
         setActiveQueue(null);
+        stopNavigation();
+    };
+
+    const startNavigation = (station: Station) => {
+        setTargetStation(station);
+        setIsNavigating(true);
+
+        const start = userLocation;
+        const end = station.location;
+        const steps = 100; // Number of steps for simulation
+        const newRoute: [number, number][] = [];
+
+        // Generate points for the route (simple linear interpolation)
+        for (let i = 0; i <= steps; i++) {
+            const lat = start.lat + (end.lat - start.lat) * (i / steps);
+            const lng = start.lng + (end.lng - start.lng) * (i / steps);
+            newRoute.push([lat, lng]);
+        }
+        setNavigationRoute(newRoute);
+
+        // Simulate movement
+        let step = 0;
+        const interval = setInterval(() => {
+            if (step < newRoute.length) {
+                const point = newRoute[step];
+                setUserLocation({ lat: point[0], lng: point[1] });
+                step++;
+            } else {
+                clearInterval(interval);
+                setIsNavigating(false);
+                setNavigationRoute([]);
+                // Optionally auto-join queue upon arrival
+                // handleJoinQueue(station.id); 
+            }
+        }, 100); // 100ms per step = 10 seconds total travel time
+
+        // Store interval ID in a ref if we want to clear it on unmount/stop
+        // For simplicity here, we let it run or rely on component unmount
+        return () => clearInterval(interval);
+    };
+
+    const stopNavigation = () => {
+        setIsNavigating(false);
+        setNavigationRoute([]);
+        setTargetStation(null);
     };
 
     return (
@@ -63,6 +113,33 @@ export default function DriverPage() {
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                    {/* Active Navigation Card */}
+                    {isNavigating && targetStation && (
+                        <Card className="border-blue-500/50 bg-blue-500/10 animate-in slide-in-from-left-2 mb-4">
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-blue-500 text-base flex justify-between items-center">
+                                    <span>Navigating...</span>
+                                    <span className="text-xs font-normal text-muted-foreground px-2 py-0.5 rounded-full bg-background/50 animate-pulse">
+                                        On Route
+                                    </span>
+                                </CardTitle>
+                                <CardDescription>
+                                    To <span className="font-semibold text-foreground">{targetStation.name}</span>
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    className="w-full"
+                                    onClick={stopNavigation}
+                                >
+                                    Stop Navigation
+                                </Button>
+                            </CardContent>
+                        </Card>
+                    )}
+
                     {activeQueue && (
                         <Card className="border-primary/50 bg-primary/10 animate-in slide-in-from-left-2">
                             <CardHeader className="pb-2">
@@ -136,19 +213,31 @@ export default function DriverPage() {
                                         ))}
                                     </div>
 
-                                    {!activeQueue ? (
-                                        <Button
-                                            className="w-full"
-                                            disabled={station.status === 'Closed'}
-                                            onClick={() => handleJoinQueue(station.id)}
-                                        >
-                                            Join Queue
-                                        </Button>
-                                    ) : (
-                                        <Button disabled variant="outline" className="w-full opacity-50">
-                                            Already in Queue
-                                        </Button>
-                                    )}
+                                    <div className="flex gap-2">
+                                        {!isNavigating && (
+                                            <Button
+                                                variant="outline"
+                                                className="flex-1"
+                                                onClick={() => startNavigation(station)}
+                                            >
+                                                Navigate
+                                            </Button>
+                                        )}
+
+                                        {!activeQueue ? (
+                                            <Button
+                                                className="flex-1"
+                                                disabled={station.status === 'Closed'}
+                                                onClick={() => handleJoinQueue(station.id)}
+                                            >
+                                                Join Queue
+                                            </Button>
+                                        ) : (
+                                            <Button disabled variant="outline" className="flex-1 opacity-50">
+                                                Already in Queue
+                                            </Button>
+                                        )}
+                                    </div>
                                 </CardContent>
                             </Card>
                         ))}
@@ -163,6 +252,8 @@ export default function DriverPage() {
                     <MapComponent
                         center={[userLocation.lat, userLocation.lng]}
                         markers={stations}
+                        userLocation={userLocation}
+                        route={navigationRoute}
                     />
                 </div>
 
@@ -174,7 +265,7 @@ export default function DriverPage() {
                                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
                                 <span className="relative inline-flex rounded-full h-2 w-2 bg-sky-500"></span>
                             </span>
-                            Simulated GPS
+                            {isNavigating ? 'Navigating...' : 'Simulated GPS'}
                         </span>
                     </CardContent>
                 </Card>
