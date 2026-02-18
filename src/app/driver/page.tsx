@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { MOCK_STATIONS } from '@/services/mockData';
 import { Station, QueueItem } from '@/types';
 import { getDistance } from 'geolib';
+import { getRoute } from '@/services/routing';
 import MapComponent from '@/components/MapComponent';
 import { Fuel, MapPin, Clock, Users, ArrowLeft } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -48,24 +49,19 @@ export default function DriverPage() {
         stopNavigation();
     };
 
-    const startNavigation = (station: Station) => {
+
+    const startNavigation = async (station: Station) => {
         setTargetStation(station);
         setIsNavigating(true);
 
         const start = userLocation;
         const end = station.location;
-        const steps = 100; // Number of steps for simulation
-        const newRoute: [number, number][] = [];
 
-        // Generate points for the route (simple linear interpolation)
-        for (let i = 0; i <= steps; i++) {
-            const lat = start.lat + (end.lat - start.lat) * (i / steps);
-            const lng = start.lng + (end.lng - start.lng) * (i / steps);
-            newRoute.push([lat, lng]);
-        }
+        // Fetch real route from OSRM
+        const newRoute = await getRoute(start, end);
         setNavigationRoute(newRoute);
 
-        // Simulate movement
+        // Simulate movement along the path
         let step = 0;
         const interval = setInterval(() => {
             if (step < newRoute.length) {
